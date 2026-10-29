@@ -1,0 +1,10 @@
+{
+  "name": "ORYQEN Assistant",
+  "description": "Premium futuristic dark cinematic web app and smart hub designed for Android tablets controlled with a USB mouse. Features voice assistant, SmartThings, Havells fan integration, screen share, and accessibility tools.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
