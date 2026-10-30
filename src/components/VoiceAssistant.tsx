@@ -17,12 +17,15 @@ import {
   AlertCircle, 
   RotateCcw, 
   CheckCircle2, 
-  SlidersHorizontal,
-  ChevronRight,
-  HelpCircle,
-  AudioLines
+  Cpu,
+  Info,
+  Radio,
+  Loader2,
+  CloudLightning,
+  CloudOff
 } from 'lucide-react';
-import { playHudSound } from '../utils/audio';
+import { playHudSound, triggerHaptic } from '../utils/audio';
+import { askCloudAi } from '../utils/aiClient';
 
 interface Props {
   havellsFan: HavellsFanState;
@@ -60,8 +63,9 @@ export const VoiceAssistant: React.FC<Props> = ({
     {
       id: 'init-1',
       sender: 'assistant',
-      text: 'ORYQEN online. Systems nominal. Ready for voice directives or manual telemetry input.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      text: 'ORYQEN online. Cloud AI backend connected. Tap the orb or speak directives.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      source: 'system'
     }
   ]);
   const [isListening, setIsListening] = useState(false);
@@ -71,7 +75,8 @@ export const VoiceAssistant: React.FC<Props> = ({
   const [sttSupported, setSttSupported] = useState(true);
   const [ttsSupported, setTtsSupported] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
   const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -113,9 +118,9 @@ export const VoiceAssistant: React.FC<Props> = ({
       recognition.onerror = (event: any) => {
         setIsListening(false);
         if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access denied. Grant permission in browser address bar or use text input.');
+          setErrorMessage('Microphone access denied. Please grant microphone permissions in your browser address bar.');
         } else if (event.error === 'no-speech') {
-          // Silent timeout
+          // Timeout without speech
         } else {
           setErrorMessage(`Speech recognition error: ${event.error}`);
         }
@@ -126,7 +131,7 @@ export const VoiceAssistant: React.FC<Props> = ({
       };
 
       recognitionRef.current = recognition;
-    } catch (e: any) {
+    } catch {
       setSttSupported(false);
       setErrorMessage('Speech Recognition initialization failed on this device.');
     }
@@ -139,14 +144,16 @@ export const VoiceAssistant: React.FC<Props> = ({
   // Scroll to bottom of message stream
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, transcript]);
+  }, [messages, transcript, isAiLoading]);
 
-  // Voice output synthesizer
+  // Voice output synthesizer (Natural spoken Alexa-style responses)
   const speakResponse = (text: string) => {
     if (!('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      // Remove any unwanted special symbols for clean spoken pronunciation
+      const cleanSpokenText = text.replace(/[*_#`~[\]]/g, '').trim();
+      const utterance = new SpeechSynthesisUtterance(cleanSpokenText);
       
       const voices = window.speechSynthesis.getVoices();
       if (speechVoiceUri) {
@@ -169,8 +176,12 @@ export const VoiceAssistant: React.FC<Props> = ({
 
   // Toggle listening
   const toggleListening = () => {
+    if (isAiLoading) return; // Prevent activation while AI is thinking
+
+    triggerHaptic('medium');
+
     if (!sttSupported) {
-      setErrorMessage('Browser Speech Recognition not supported on this browser version. Use text input below.');
+      setErrorMessage('Speech Recognition is not supported on this browser engine. Use the directive input below.');
       return;
     }
     if (isListening) {
@@ -181,7 +192,7 @@ export const VoiceAssistant: React.FC<Props> = ({
       setErrorMessage(null);
       try {
         recognitionRef.current?.start();
-      } catch (err) {
+      } catch {
         recognitionRef.current?.stop();
         setTimeout(() => {
           recognitionRef.current?.start();
@@ -190,10 +201,10 @@ export const VoiceAssistant: React.FC<Props> = ({
     }
   };
 
-  // Natural Language Intent Processor
-  const handleUserCommand = (input: string) => {
+  // Process Directives: Direct hardware/navigation commands first, general questions to Cloud AI
+  const handleUserCommand = async (input: string) => {
     const raw = input.trim();
-    if (!raw) return;
+    if (!raw || isAiLoading) return; // Prevent duplicate submissions
 
     const userMsg: VoiceMessage = {
       id: `user-${Date.now()}`,
@@ -208,16 +219,56 @@ export const VoiceAssistant: React.FC<Props> = ({
     const lower = raw.toLowerCase();
     let reply = '';
     let intent = 'general';
+    let isLocalHandled = false;
 
-    // 1. Havells Fan Directives
-    if (lower.includes('fan') || lower.includes('havells')) {
+    // 1. Navigation Commands
+    if (lower.includes('turn off voice') || lower.includes('stop voice') || lower.includes('mute voice') || lower.includes('shut up') || lower.includes('stop listening')) {
+      isLocalHandled = true;
+      intent = 'voice_off';
+      if (isListening) {
+        recognitionRef.current?.stop();
+        setIsListening(false);
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      reply = 'Voice assistant deactivated. Standing by.';
+    }
+    else if (lower.includes('go home') || lower.includes('open home') || lower.includes('home dashboard') || lower.includes('back home')) {
+      isLocalHandled = true;
+      intent = 'nav_home';
+      reply = 'Navigating to Home Dashboard.';
+      onNavigate('home');
+    }
+    else if (lower.includes('screen sharing') || lower.includes('screen mirror') || lower.includes('mirroring') || lower.includes('mirror screen') || lower.includes('cast')) {
+      isLocalHandled = true;
+      intent = 'nav_screenshare';
+      reply = 'Opening Screen Mirroring Hub.';
+      onNavigate('screenshare');
+    }
+    else if (lower.includes('smart home') || lower.includes('open appliances')) {
+      isLocalHandled = true;
+      intent = 'nav_smarthome';
+      reply = 'Opening Smart Home management console.';
+      onNavigate('smarthome');
+    }
+    else if (lower.includes('settings') || lower.includes('accessibility') || lower.includes('configure')) {
+      isLocalHandled = true;
+      intent = 'nav_settings';
+      reply = 'Accessing System Settings and display options.';
+      onNavigate('settings');
+    }
+
+    // 2. Havells Fan Directives
+    else if (lower.includes('fan') || lower.includes('havells')) {
+      isLocalHandled = true;
       intent = 'havells_fan';
       if (lower.includes('turn on') || lower.includes('start') || lower.includes('power on')) {
         onUpdateHavellsFan({ power: true });
-        reply = 'Havells Smart Fan powered on at speed ' + havellsFan.speed + '.';
+        reply = `Havells Smart Fan powered on at speed ${havellsFan.speed}.`;
       } else if (lower.includes('turn off') || lower.includes('stop') || lower.includes('power off') || lower.includes('shut down')) {
         onUpdateHavellsFan({ power: false });
-        reply = 'Havells Smart Fan powered off. Standing by.';
+        reply = 'Havells Smart Fan powered off.';
       } else if (lower.match(/speed\s*([1-5])/)) {
         const match = lower.match(/speed\s*([1-5])/);
         const lvl = parseInt(match![1], 10);
@@ -240,103 +291,114 @@ export const VoiceAssistant: React.FC<Props> = ({
       }
     }
 
-    // 2. SmartThings Directives
+    // 3. SmartThings Directives
     else if (lower.includes('light') || lower.includes('lights') || lower.includes('lamp') || lower.includes('tv') || lower.includes('smartthings')) {
+      isLocalHandled = true;
       intent = 'smartthings';
       if (lower.includes('turn on') || lower.includes('turn all on')) {
         smartThingsDevices.forEach(d => {
           if (!d.power) onToggleSmartThingsDevice(d.id, true);
         });
-        reply = 'SmartThings hub verified. Turning on connected lighting circuits.';
+        reply = 'Turning on all connected SmartThings fixtures.';
       } else if (lower.includes('turn off') || lower.includes('turn all off')) {
         smartThingsDevices.forEach(d => {
           if (d.power) onToggleSmartThingsDevice(d.id, false);
         });
-        reply = 'SmartThings command dispatched. Turning off connected fixtures.';
+        reply = 'Turning off all connected SmartThings fixtures.';
       } else if (lower.includes('tv')) {
         const tv = smartThingsDevices.find(d => d.type === 'tv');
         if (tv) {
           onToggleSmartThingsDevice(tv.id);
-          reply = `Samsung Smart TV state toggled.`;
+          reply = 'Samsung Smart TV state toggled.';
         } else {
-          reply = 'Samsung TV device not registered in current profile.';
+          reply = 'Samsung TV device is not in current profile.';
         }
       } else {
-        reply = 'SmartThings commands acknowledged. You can say: "Turn all lights on" or "Turn off living room".';
+        reply = 'SmartThings command acknowledged. You can ask me to turn lights on or off.';
       }
     }
 
-    // 3. Time, Chrono, Weather
-    else if (lower.includes('time') || lower.includes('clock')) {
+    // 4. Quick Local Telemetry (Time, Battery)
+    else if (lower === 'what time is it' || lower === 'time' || lower === 'current time') {
+      isLocalHandled = true;
       intent = 'telemetry_time';
       const now = new Date();
-      reply = `The current system time is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}.`;
+      reply = `The current time is ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
     } 
-    else if (lower.includes('weather') || lower.includes('temperature') || lower.includes('rain')) {
-      intent = 'telemetry_weather';
-      if (weather) {
-        reply = `Current conditions: ${weather.condition}, ${weather.temp} degrees Celsius with ${weather.humidity} percent humidity.`;
-      } else {
-        reply = 'Environmental telemetry sensors are gathering atmospheric readings.';
-      }
-    }
-
-    // 4. Battery & Tablet Diagnostics
-    else if (lower.includes('battery') || lower.includes('power') || lower.includes('charge')) {
+    else if (lower.includes('battery status') || lower.includes('battery level')) {
+      isLocalHandled = true;
       intent = 'telemetry_battery';
       const level = telemetry.batteryLevel ?? 85;
-      const status = telemetry.isCharging ? 'charging via AC power' : 'running on internal battery';
-      reply = `Tablet battery level is currently at ${level} percent, ${status}.`;
+      const status = telemetry.isCharging ? 'and charging' : 'on battery power';
+      reply = `Your battery is at ${level} percent, ${status}.`;
     }
 
-    // 5. Navigation Directives
-    else if (lower.includes('go to') || lower.includes('open') || lower.includes('navigate')) {
-      intent = 'navigation';
-      if (lower.includes('home') || lower.includes('dashboard')) {
-        reply = 'Navigating to Home HUD.';
-        onNavigate('home');
-      } else if (lower.includes('smart home') || lower.includes('devices')) {
-        reply = 'Opening Smart Home management console.';
-        onNavigate('smarthome');
-      } else if (lower.includes('screen') || lower.includes('mirror') || lower.includes('cast')) {
-        reply = 'Opening Screen Sharing protocol hub.';
-        onNavigate('screenshare');
-      } else if (lower.includes('settings') || lower.includes('accessibility')) {
-        reply = 'Accessing System Settings and tablet mouse options.';
-        onNavigate('settings');
-      } else {
-        reply = 'Unknown destination. You can navigate to Home, Smart Home, Screen Share, or Settings.';
-      }
+    // If direct local intent matched, respond immediately!
+    if (isLocalHandled) {
+      const assistantMsg: VoiceMessage = {
+        id: `assist-${Date.now()}`,
+        sender: 'assistant',
+        text: reply,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        intent,
+        source: 'local_rule',
+        status: 'success'
+      };
+      setMessages(prev => [...prev, assistantMsg]);
+      playHudSound('success', soundEnabled);
+      speakResponse(reply);
+      return;
     }
 
-    // 6. Identity & General
-    else if (lower.includes('who are you') || lower.includes('what are you')) {
-      reply = 'I am ORYQEN, your high-performance tablet assistant and HUD console, designed specifically for USB mouse navigation and home automation.';
-    }
-    else if (lower.includes('joke')) {
-      reply = 'Why did the Android tablet connect a USB mouse? Because its touchscreen had a complete nervous breakdown.';
-    }
-    else {
-      reply = `Understood: "${raw}". I am ready for smart home directives, weather telemetry, or tablet control.`;
-    }
+    // ONLINE-ONLY Cloud AI Backend: All general queries route to Netlify Function via askCloudAi
+    setIsAiLoading(true);
+    setErrorMessage(null);
 
-    // Append Assistant Reply
-    const assistantMsg: VoiceMessage = {
-      id: `assist-${Date.now()}`,
-      sender: 'assistant',
-      text: reply,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      intent
-    };
+    // Build short conversation history
+    const conversationHistory = messages
+      .filter(m => m.source !== 'system')
+      .slice(-6)
+      .map(m => ({ sender: m.sender, text: m.text }));
 
-    setMessages(prev => [...prev, assistantMsg]);
-    playHudSound('success', soundEnabled);
-    speakResponse(reply);
+    const aiResult = await askCloudAi(raw, conversationHistory);
+
+    setIsAiLoading(false);
+
+    if (aiResult.success && aiResult.reply) {
+      const cloudMsg: VoiceMessage = {
+        id: `assist-ai-${Date.now()}`,
+        sender: 'assistant',
+        text: aiResult.reply,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        source: 'gemini_ai',
+        status: 'success',
+        model: aiResult.model || 'Gemini 3.8 Flash'
+      };
+      setMessages(prev => [...prev, cloudMsg]);
+      playHudSound('success', soundEnabled);
+      speakResponse(aiResult.reply);
+    } else {
+      // Honest error state: never fake an AI reply or use an offline fake response
+      const errorMsgText = aiResult.error || 'Cloud AI service is currently unavailable.';
+      setErrorMessage(errorMsgText);
+
+      const failedMsg: VoiceMessage = {
+        id: `assist-err-${Date.now()}`,
+        sender: 'assistant',
+        text: `Cloud AI Unavailable: ${errorMsgText}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        source: 'system',
+        status: 'fallback'
+      };
+      setMessages(prev => [...prev, failedMsg]);
+      playHudSound('alert', soundEnabled);
+      speakResponse('Cloud AI service unavailable.');
+    }
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualInput.trim()) return;
+    if (!manualInput.trim() || isAiLoading) return;
     handleUserCommand(manualInput);
     setManualInput('');
   };
@@ -353,7 +415,7 @@ export const VoiceAssistant: React.FC<Props> = ({
 
     const render = () => {
       animId = requestAnimationFrame(render);
-      step += isListening || isSpeaking ? 0.08 : 0.02;
+      step += isListening || isSpeaking || isAiLoading ? 0.08 : 0.02;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -361,21 +423,20 @@ export const VoiceAssistant: React.FC<Props> = ({
       const height = canvas.height;
       const centerY = height / 2;
 
-      // Draw subtle wave
       const lines = 3;
       for (let l = 0; l < lines; l++) {
         ctx.beginPath();
         ctx.lineWidth = l === 1 ? 2.5 : 1.2;
         
-        const alpha = isListening || isSpeaking ? (0.8 - l * 0.2) : (0.25 - l * 0.05);
+        const alpha = isListening || isSpeaking || isAiLoading ? (0.85 - l * 0.2) : (0.2 - l * 0.05);
         ctx.strokeStyle = l === 0 
           ? `rgba(6, 182, 212, ${alpha})` 
           : l === 1 
           ? `rgba(168, 85, 247, ${alpha})` 
           : `rgba(56, 189, 248, ${alpha})`;
 
-        const amplitude = isListening ? 24 : isSpeaking ? 18 : 6;
-        const frequency = isListening || isSpeaking ? 0.025 : 0.015;
+        const amplitude = isListening ? 26 : isSpeaking ? 20 : isAiLoading ? 14 : 5;
+        const frequency = isListening || isSpeaking || isAiLoading ? 0.028 : 0.015;
 
         for (let x = 0; x < width; x += 4) {
           const y = centerY + Math.sin(x * frequency + step + l * 0.8) * amplitude * Math.sin((x / width) * Math.PI);
@@ -391,49 +452,50 @@ export const VoiceAssistant: React.FC<Props> = ({
 
     render();
     return () => cancelAnimationFrame(animId);
-  }, [isListening, isSpeaking]);
+  }, [isListening, isSpeaking, isAiLoading]);
 
   const commandShortcuts = [
-    'Turn on Havells fan',
+    'What is quantum computing?',
+    'Open screen sharing',
+    'Go home',
+    'Turn off voice',
     'Set fan speed to 4',
     'Turn all lights off',
-    'Check battery status',
-    'What is the weather?',
-    'What time is it?',
-    'Open Screen Share'
+    'How does solar energy work?'
   ];
 
   return (
-    <div className="max-w-5xl mx-auto px-4 md:px-8 py-6 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 md:px-6 py-4 space-y-4">
       
-      {/* Header & Status Indicator */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl hud-card border border-cyan-500/20">
+      {/* Alexa-Style Header & Capability Status */}
+      <div className="p-4 rounded-2xl hud-card border border-cyan-500/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-400/40 flex items-center justify-center text-cyan-400">
-            <Mic className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-purple-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shrink-0">
+            <Mic className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <span>Voice AI &amp; Speech Core</span>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                sttSupported 
-                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30' 
-                  : 'bg-amber-950/60 text-amber-300 border-amber-500/30'
-              }`}>
-                {sttSupported ? 'Speech STT Ready' : 'STT Restricted / Fallback'}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-slate-100">
+                ORYQEN Voice Assistant
+              </h2>
+              {/* Online-Only Cloud AI indicator badge */}
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-cyan-950/70 border-cyan-500/40 text-cyan-300">
+                <CloudLightning className="w-2.5 h-2.5 text-cyan-400" />
+                <span>Online Cloud AI Only</span>
               </span>
-            </h2>
-            <p className="text-xs text-slate-400">
-              Web Speech API recognition with real speech synthesis and local intent processing.
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Powered by server-side Gemini Cloud AI via Netlify Function.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Audio Mute / Test Button */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
           {isSpeaking && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-950/60 border border-purple-500/40 text-purple-300 text-xs font-mono">
-              <Volume2 className="w-4 h-4 animate-pulse text-purple-400" />
-              <span>VOCALIZING...</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-950/80 border border-purple-500/40 text-purple-300 text-xs font-mono">
+              <Volume2 className="w-3.5 h-3.5 animate-pulse text-purple-400" />
+              <span>VOCALIZING</span>
             </div>
           )}
           <button
@@ -442,27 +504,35 @@ export const VoiceAssistant: React.FC<Props> = ({
                 window.speechSynthesis?.cancel();
                 setIsSpeaking(false);
               } else {
-                speakResponse('Audio vocalization test. Speech synthesis operational.');
+                speakResponse('Oryqen speech synthesis is online and calibrated.');
               }
             }}
-            className="px-3 py-1.5 text-xs font-mono text-slate-400 hover:text-cyan-300 bg-slate-900 border border-slate-700 hover:border-cyan-500/40 rounded-lg transition-colors cursor-pointer"
-            title="Test or Stop Speech Synthesis"
+            className="min-h-[44px] px-3 py-1.5 text-xs font-mono text-slate-300 hover:text-cyan-300 bg-slate-900 border border-slate-700 hover:border-cyan-500/40 rounded-xl transition-colors cursor-pointer"
           >
-            {isSpeaking ? 'Mute' : 'Test TTS'}
+            {isSpeaking ? 'Mute Audio' : 'Test Speech'}
           </button>
         </div>
       </div>
 
-      {/* Error / Compatibility Notification if any */}
+      {/* Cloud AI Notice */}
+      <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
+        <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+        <div className="space-y-0.5">
+          <span className="font-semibold text-slate-200">Online Cloud AI Active: </span>
+          <span>General questions and conversational dialogue are processed live by server-side Gemini AI via <code>/api/chat</code>. Direct device and navigation commands are executed locally with zero latency.</span>
+        </div>
+      </div>
+
+      {/* Error & Rate-Limit / Offline Notification */}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-3">
+        <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
           <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div className="flex-1">
             <span className="font-semibold">Notice:</span> {errorMessage}
           </div>
           <button
             onClick={() => setErrorMessage(null)}
-            className="text-amber-400 hover:text-amber-200 font-mono text-xs cursor-pointer"
+            className="text-amber-400 hover:text-amber-200 font-mono text-xs cursor-pointer ml-2"
           >
             Dismiss
           </button>
@@ -470,18 +540,19 @@ export const VoiceAssistant: React.FC<Props> = ({
       )}
 
       {/* Main Holographic Voice Orb & Waveform Section */}
-      <div className="p-6 md:p-8 rounded-2xl hud-card border border-cyan-500/25 flex flex-col items-center justify-center relative overflow-hidden text-center shadow-[0_4px_30px_rgba(6,182,212,0.08)]">
+      <div className="p-5 md:p-6 rounded-2xl hud-card border border-cyan-500/25 flex flex-col items-center justify-center relative overflow-hidden text-center shadow-[0_4px_30px_rgba(6,182,212,0.08)]">
+        
         {/* Holographic Waveform Canvas */}
-        <div className="w-full h-24 max-w-lg mb-2 relative">
+        <div className="w-full h-20 max-w-md mb-2 relative">
           <canvas
             ref={canvasRef}
-            width={500}
-            height={96}
+            width={480}
+            height={80}
             className="w-full h-full"
           />
         </div>
 
-        {/* Large Central Push-To-Talk Orb (Big Target for USB Mouse) */}
+        {/* Large Central Push-To-Talk Orb */}
         <div className="relative my-2">
           {/* Pulsing rings when listening */}
           {isListening && (
@@ -493,54 +564,70 @@ export const VoiceAssistant: React.FC<Props> = ({
 
           <button
             onClick={toggleListening}
-            className={`w-28 h-28 rounded-full flex flex-col items-center justify-center transition-all cursor-pointer shadow-xl relative z-10 active:scale-95 ${
+            disabled={isAiLoading}
+            className={`w-32 h-32 rounded-full flex flex-col items-center justify-center transition-all cursor-pointer shadow-xl relative z-10 touch-press disabled:opacity-75 disabled:cursor-not-allowed ${
               isListening
                 ? 'bg-gradient-to-tr from-cyan-500 to-cyan-400 text-slate-950 shadow-[0_0_35px_rgba(6,182,212,0.6)] scale-105'
+                : isAiLoading
+                ? 'bg-purple-950 border-2 border-purple-400 text-purple-300 animate-pulse'
                 : 'bg-slate-900 border-2 border-cyan-500/40 text-cyan-300 hover:border-cyan-300 hover:shadow-[0_0_25px_rgba(6,182,212,0.3)]'
             }`}
           >
             {isListening ? (
               <>
-                <Mic className="w-9 h-9 animate-pulse" />
+                <Mic className="w-10 h-10 animate-pulse" />
                 <span className="text-[10px] font-mono font-bold tracking-widest mt-1">
                   LISTENING
                 </span>
               </>
+            ) : isAiLoading ? (
+              <>
+                <Sparkles className="w-9 h-9 animate-spin text-purple-400" />
+                <span className="text-[10px] font-mono font-bold tracking-widest mt-1">
+                  THINKING
+                </span>
+              </>
             ) : (
               <>
-                <Mic className="w-9 h-9" />
+                <Mic className="w-10 h-10" />
                 <span className="text-[10px] font-mono font-bold tracking-widest mt-1">
-                  CLICK TO TALK
+                  TAP TO SPEAK
                 </span>
               </>
             )}
           </button>
         </div>
 
-        {/* Live speech feedback transcript */}
-        <div className="mt-4 min-h-[32px] max-w-xl">
+        {/* Live speech feedback transcript / status */}
+        <div className="mt-3 min-h-[32px] max-w-lg">
           {transcript ? (
             <p className="text-sm font-mono text-cyan-300 bg-cyan-950/40 px-4 py-2 rounded-xl border border-cyan-500/30">
               "{transcript}"
             </p>
           ) : isListening ? (
-            <p className="text-xs font-mono text-cyan-400/80 animate-pulse">
-              Listening for directives... ("Turn on fan", "What time is it?", "Check battery")
+            <p className="text-xs font-mono text-cyan-400/90 animate-pulse">
+              Listening for commands... ("What is quantum computing?", "Go home", "Set fan speed to 3")
+            </p>
+          ) : isAiLoading ? (
+            <p className="text-xs font-mono text-purple-300 animate-pulse flex items-center justify-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+              <span>Querying Cloud AI model...</span>
             </p>
           ) : (
             <p className="text-xs text-slate-400">
-              Click the orb with your USB mouse or click any directive below.
+              Tap the orb to speak, or type any question below.
             </p>
           )}
         </div>
 
-        {/* Quick Click Directives for Mouse Control */}
-        <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-2xl">
+        {/* Quick Click Directives for Mouse or Touch Reach */}
+        <div className="mt-5 flex flex-wrap justify-center gap-2 max-w-xl">
           {commandShortcuts.map((cmd) => (
             <button
               key={cmd}
               onClick={() => handleUserCommand(cmd)}
-              className="min-h-[40px] px-3.5 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/80 hover:border-cyan-500/50 hover:bg-cyan-950/30 text-slate-300 hover:text-cyan-200 text-xs font-mono transition-all cursor-pointer whitespace-nowrap active:scale-95"
+              disabled={isAiLoading}
+              className="min-h-[48px] px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:border-cyan-500/50 hover:bg-cyan-950/30 text-slate-300 hover:text-cyan-200 text-xs font-mono transition-all cursor-pointer whitespace-nowrap touch-press shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {cmd}
             </button>
@@ -549,10 +636,10 @@ export const VoiceAssistant: React.FC<Props> = ({
       </div>
 
       {/* Message History & Manual Command Bar */}
-      <div className="p-5 rounded-2xl hud-card border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+      <div className="p-4 md:p-5 rounded-2xl hud-card border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
           <div className="text-xs font-mono text-slate-400 flex items-center gap-2">
-            <AudioLines className="w-4 h-4 text-cyan-400" />
+            <Radio className="w-4 h-4 text-cyan-400" />
             <span>SESSION DIRECTIVES LOG</span>
           </div>
 
@@ -562,10 +649,12 @@ export const VoiceAssistant: React.FC<Props> = ({
                 id: `reset-${Date.now()}`,
                 sender: 'assistant',
                 text: 'Directives log cleared. Ready for next command.',
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                source: 'system'
               }
             ])}
-            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+            disabled={isAiLoading}
+            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer disabled:opacity-50"
           >
             <RotateCcw className="w-3 h-3" />
             <span>Clear Log</span>
@@ -573,29 +662,55 @@ export const VoiceAssistant: React.FC<Props> = ({
         </div>
 
         {/* Scrollable Conversation Stream */}
-        <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-64 sm:max-h-72 overflow-y-auto pr-1">
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
+            const isCloudAi = msg.source === 'gemini_ai';
             return (
               <div
                 key={msg.id}
                 className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[85%] p-3.5 rounded-2xl text-xs md:text-sm ${
+                  className={`max-w-[90%] sm:max-w-[80%] p-3 rounded-2xl text-xs md:text-sm ${
                     isUser
                       ? 'bg-cyan-600/20 border border-cyan-400/40 text-cyan-100 rounded-tr-none'
-                      : 'bg-slate-900/90 border border-purple-500/30 text-slate-200 rounded-tl-none shadow-sm'
+                      : isCloudAi
+                      ? 'bg-gradient-to-r from-slate-900 to-cyan-950/40 border border-cyan-400/50 text-slate-100 rounded-tl-none shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                      : msg.status === 'fallback'
+                      ? 'bg-red-950/40 border border-red-500/40 text-red-200 rounded-tl-none'
+                      : 'bg-slate-900/90 border border-purple-500/30 text-slate-200 rounded-tl-none'
                   }`}
                 >
-                  <p>{msg.text}</p>
-                  <div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-slate-500 font-mono">
-                    <span>{isUser ? 'USER DIRECTIVE' : 'ORYQEN RESPONSE'}</span>
+                  <p className="leading-relaxed">{msg.text}</p>
+                  
+                  {/* Footer metadata */}
+                  <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/60">
+                    <div className="flex items-center gap-1">
+                      {isUser ? (
+                        <span>USER DIRECTIVE</span>
+                      ) : isCloudAi ? (
+                        <span className="text-cyan-300 flex items-center gap-1 font-semibold">
+                          <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
+                          <span>{msg.model || 'Gemini Cloud AI'}</span>
+                        </span>
+                      ) : msg.status === 'fallback' ? (
+                        <span className="text-red-300 flex items-center gap-1">
+                          <CloudOff className="w-2.5 h-2.5 text-red-400" />
+                          <span>Cloud Error</span>
+                        </span>
+                      ) : (
+                        <span className="text-purple-300 flex items-center gap-1">
+                          <Cpu className="w-2.5 h-2.5 text-purple-400" />
+                          <span>Device Controller</span>
+                        </span>
+                      )}
+                    </div>
                     <span>{msg.timestamp}</span>
                   </div>
                 </div>
 
-                {!isUser && (
+                {!isUser && msg.status !== 'fallback' && (
                   <button
                     onClick={() => speakResponse(msg.text)}
                     className="mt-1 text-[10px] text-slate-400 hover:text-cyan-400 flex items-center gap-1 px-2 py-0.5 cursor-pointer"
@@ -610,20 +725,27 @@ export const VoiceAssistant: React.FC<Props> = ({
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Manual Command Form (For when mic is off or unavailable) */}
+        {/* Manual Command Form (Functional even when STT is unsupported) */}
         <form onSubmit={handleManualSubmit} className="pt-2 flex items-center gap-2">
           <input
             type="text"
             value={manualInput}
             onChange={(e) => setManualInput(e.target.value)}
-            placeholder="Type directive (e.g. 'Turn on Havells fan', 'What time is it?')..."
-            className="flex-1 min-h-[48px] px-4 rounded-xl bg-slate-900 border border-slate-700 focus:border-cyan-400 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-colors"
+            disabled={isAiLoading}
+            placeholder={isAiLoading ? 'Waiting for Cloud AI...' : "Ask anything (e.g. 'What is dark matter?', 'Open screen sharing')..."}
+            className="flex-1 min-h-[50px] px-4 rounded-xl bg-slate-900 border border-slate-700 focus:border-cyan-400 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-colors disabled:opacity-60"
           />
           <button
             type="submit"
-            className="min-h-[48px] min-w-[48px] px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold flex items-center justify-center transition-all cursor-pointer active:scale-95 shadow-sm"
+            disabled={isAiLoading || !manualInput.trim()}
+            className="min-h-[50px] min-w-[50px] px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold flex items-center justify-center transition-all cursor-pointer touch-press shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            title={isAiLoading ? 'Request in progress' : 'Send message'}
           >
-            <Send className="w-4 h-4" />
+            {isAiLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin text-slate-950" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
           </button>
         </form>
       </div>

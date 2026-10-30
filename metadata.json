@@ -1,6 +1,6 @@
 {
   "name": "ORYQEN Assistant",
-  "description": "Premium futuristic dark cinematic web app and smart hub designed for Android tablets controlled with a USB mouse. Features voice assistant, SmartThings, Havells fan integration, screen share, and accessibility tools.",
+  "description": "Futuristic Alexa-style voice assistant and honest screen mirroring hub for Samsung Galaxy M33 (Android 14) and Android tablets, with SmartThings and Havells fan controls.",
   "requestFramePermissions": [
     "camera",
     "microphone",

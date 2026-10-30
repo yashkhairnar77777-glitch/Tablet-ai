@@ -3,7 +3,6 @@ import {
   Cast, 
   Smartphone, 
   Tablet, 
-  Tv, 
   Play, 
   Square, 
   AlertTriangle, 
@@ -16,8 +15,14 @@ import {
   QrCode,
   ShieldAlert,
   MonitorPlay,
-  RotateCcw
+  RotateCcw,
+  Layers,
+  Code2,
+  Lock,
+  Radio,
+  Wifi
 } from 'lucide-react';
+import { BrowserCaptureState } from '../types';
 import { playHudSound } from '../utils/audio';
 
 interface Props {
@@ -25,52 +30,66 @@ interface Props {
 }
 
 export const ScreenShareHub: React.FC<Props> = ({ soundEnabled }) => {
-  const [direction, setDirection] = useState<'tablet_to_phone' | 'phone_to_tablet' | 'scrcpy_guide'>('tablet_to_phone');
+  const [activeTab, setActiveTab] = useState<'browser_test' | 'companion_spec' | 'scrcpy_guide'>('browser_test');
   
   // Real Screen Capture Stream State
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [streamError, setStreamError] = useState<string | null>(null);
+  const [captureState, setCaptureState] = useState<BrowserCaptureState>('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [streamResolution, setStreamResolution] = useState<string | null>(null);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Pairing Room Code
-  const [roomCode] = useState(() => `OQ-${Math.floor(1000 + Math.random() * 9000)}-HUB`);
-  const [copiedCode, setCopiedCode] = useState(false);
+  // Check Display Media capability accurately
+  const isDisplayMediaSupported = typeof navigator !== 'undefined' && 
+    !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+  
+  // Check if running on Android
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
-  // Check Display Media capability
-  const displayMediaSupported = typeof navigator !== 'undefined' && 
-    !!(navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices);
-
-  // Stop stream cleanup
+  // Stop capture and release all media tracks completely
   const stopCapture = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      const tracks = streamRef.current.getTracks();
+      tracks.forEach(track => {
+        track.stop();
+      });
       streamRef.current = null;
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    setIsCapturing(false);
+    setCaptureState('idle');
+    setStreamResolution(null);
     playHudSound('click', soundEnabled);
   };
 
+  // Ensure tracks are stopped on unmount
   useEffect(() => {
     return () => {
-      stopCapture();
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
     };
   }, []);
 
-  // Real Display Capture Request
+  // Request display capture strictly after user gesture
   const startCapture = async () => {
-    setStreamError(null);
-    if (!displayMediaSupported) {
-      setStreamError('The getDisplayMedia API is not available on this browser or OS. Mobile Android Chrome restricts browser screen capture for security.');
+    setErrorMessage(null);
+
+    if (!isDisplayMediaSupported) {
+      setCaptureState('unsupported');
+      setErrorMessage('navigator.mediaDevices.getDisplayMedia is not supported by this browser engine.');
       playHudSound('alert', soundEnabled);
       return;
     }
 
+    setCaptureState('requesting');
+    playHudSound('wake', soundEnabled);
+
     try {
-      playHudSound('wake', soundEnabled);
+      // Prompt user for display capture
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           displaySurface: 'monitor',
@@ -80,405 +99,385 @@ export const ScreenShareHub: React.FC<Props> = ({ soundEnabled }) => {
       });
 
       streamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(() => {});
       }
-      setIsCapturing(true);
-      playHudSound('success', soundEnabled);
 
-      stream.getVideoTracks()[0].onended = () => {
-        stopCapture();
-      };
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        const settings = videoTrack.getSettings();
+        if (settings.width && settings.height) {
+          setStreamResolution(`${settings.width} × ${settings.height}`);
+        }
+
+        // Listen for user stopping share via browser native banner
+        videoTrack.onended = () => {
+          stopCapture();
+        };
+      }
+
+      setCaptureState('capturing');
+      playHudSound('success', soundEnabled);
     } catch (err: any) {
-      setIsCapturing(false);
+      stopCapture();
       if (err.name === 'NotAllowedError') {
-        setStreamError('Screen capture permission was declined or dismissed.');
+        setCaptureState('permission_denied');
+        setErrorMessage('Display capture permission was denied or dismissed by the user.');
+      } else if (err.name === 'NotSupportedError') {
+        setCaptureState('unsupported');
+        setErrorMessage('Android OS policy blocks browser-level display capture. Full-screen capture on Android 14 requires a native MediaProjection foreground service.');
       } else {
-        setStreamError(`Screen capture failed: ${err.message || err.name}`);
+        setCaptureState('error');
+        setErrorMessage(`Capture failed: ${err.message || err.name}`);
       }
       playHudSound('alert', soundEnabled);
     }
   };
 
-  const copyRoomCode = () => {
-    playHudSound('click', soundEnabled);
-    navigator.clipboard?.writeText(roomCode);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
-  };
-
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 md:px-6 py-4 space-y-4">
       
-      {/* Header & Mode Switcher */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 rounded-2xl hud-card border border-slate-800">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+      {/* Navigation Sub-Tabs */}
+      <div className="p-2 rounded-2xl hud-card border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
           <button
             onClick={() => {
               playHudSound('click', soundEnabled);
-              setDirection('tablet_to_phone');
+              setActiveTab('browser_test');
             }}
-            className={`min-h-[44px] px-4 py-2 rounded-lg text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer ${
-              direction === 'tablet_to_phone'
+            className={`flex-1 sm:flex-initial min-h-[44px] px-3.5 py-2 rounded-lg text-xs font-mono font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer touch-press ${
+              activeTab === 'browser_test'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Tablet className="w-4 h-4 text-cyan-400" />
-            <span>Tablet → Phone</span>
+            <MonitorPlay className="w-4 h-4 text-cyan-400" />
+            <span>Browser Capture Probe</span>
           </button>
 
           <button
             onClick={() => {
               playHudSound('click', soundEnabled);
-              setDirection('phone_to_tablet');
+              setActiveTab('companion_spec');
             }}
-            className={`min-h-[44px] px-4 py-2 rounded-lg text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer ${
-              direction === 'phone_to_tablet'
+            className={`flex-1 sm:flex-initial min-h-[44px] px-3.5 py-2 rounded-lg text-xs font-mono font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer touch-press ${
+              activeTab === 'companion_spec'
                 ? 'bg-purple-500/20 text-purple-300 border border-purple-400/50 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Smartphone className="w-4 h-4 text-purple-400" />
-            <span>Phone → Tablet</span>
+            <span>Samsung M33 Companion Spec</span>
           </button>
 
           <button
             onClick={() => {
               playHudSound('click', soundEnabled);
-              setDirection('scrcpy_guide');
+              setActiveTab('scrcpy_guide');
             }}
-            className={`min-h-[44px] px-4 py-2 rounded-lg text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer ${
-              direction === 'scrcpy_guide'
-                ? 'bg-slate-800 text-slate-100 border border-slate-700'
+            className={`flex-1 sm:flex-initial min-h-[44px] px-3.5 py-2 rounded-lg text-xs font-mono font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer touch-press ${
+              activeTab === 'scrcpy_guide'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Cable className="w-4 h-4 text-emerald-400" />
-            <span>USB OTG &amp; Scrcpy Guide</span>
+            <span>Scrcpy &amp; ADB Guide</span>
           </button>
         </div>
 
         <div className="px-3 flex items-center gap-2 text-xs font-mono text-slate-400">
-          <span className="text-cyan-400">Peer Protocol:</span>
-          <span>WebRTC P2P Data &amp; Media</span>
+          <span className="text-cyan-400 font-semibold">Target Hardware:</span>
+          <span>Samsung Galaxy M33 (Android 14)</span>
         </div>
       </div>
 
-      {/* OPTION 1: TABLET TO PHONE (OUTGOING MIRROR) */}
-      {direction === 'tablet_to_phone' && (
-        <div className="space-y-6">
+      {/* TAB 1: BROWSER CAPTURE PROBE & HONEST TESTING */}
+      {activeTab === 'browser_test' && (
+        <div className="space-y-4">
           
-          {/* Honest Status Banner */}
-          <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30 flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
-            <div className="text-xs space-y-1">
-              <div className="font-semibold text-cyan-200">
-                Tablet Screen Broadcasting Capability
-              </div>
-              <p className="text-slate-300">
-                Uses the browser's native Screen Capture API (<code>navigator.mediaDevices.getDisplayMedia</code>). When running on compatible Chromium tablet browsers, you can broadcast your screen directly to other local network devices via WebRTC.
-              </p>
-              <div className="text-[11px] text-slate-400 pt-1">
-                Display Capture API: {displayMediaSupported ? (
-                  <span className="text-emerald-400 font-mono">SUPPORTED ON THIS BROWSER</span>
-                ) : (
-                  <span className="text-amber-400 font-mono">RESTRICTED BY MOBILE OS POLICY</span>
-                )}
+          {/* Honest Status Breakdown */}
+          <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30 space-y-2">
+            <div className="flex items-start gap-2.5">
+              <ShieldAlert className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <div className="font-semibold text-cyan-200 text-sm">
+                  Technical Truth: Webpage vs. Full Android 14 Screen Mirroring
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  A standard webpage <strong>cannot reliably capture the entire Samsung Galaxy M33 operating system from within itself</strong>. Android 14 (One UI 6) enforces strict application sandboxing. The browser's <code>getDisplayMedia</code> API is either completely disabled on mobile Chrome, or limited strictly to sharing the active browser tab.
+                </p>
+                <div className="text-[11px] text-slate-400 pt-1 flex items-center gap-2 flex-wrap font-mono">
+                  <span>API Detected: {isDisplayMediaSupported ? 'YES' : 'NO'}</span>
+                  <span>·</span>
+                  <span>Environment: {isAndroid ? 'Android Mobile Engine' : 'Desktop / Emulator Engine'}</span>
+                  <span>·</span>
+                  <span className={captureState === 'capturing' ? 'text-emerald-400' : 'text-slate-400'}>
+                    State: {captureState.toUpperCase()}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Error Message */}
-          {streamError && (
-            <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-3">
+          {/* Error / Permission Notification */}
+          {errorMessage && (
+            <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <span className="font-semibold">Notice:</span> {streamError}
+                <span className="font-semibold">Capture Status Notice:</span> {errorMessage}
               </div>
               <button
-                onClick={() => setStreamError(null)}
-                className="text-amber-400 hover:text-amber-200 font-mono text-xs cursor-pointer"
+                onClick={() => setErrorMessage(null)}
+                className="text-amber-400 hover:text-amber-200 font-mono text-xs cursor-pointer ml-2"
               >
                 Dismiss
               </button>
             </div>
           )}
 
-          {/* Screen Monitor HUD Display */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            
-            {/* Monitor Viewport (7 Cols) */}
-            <div className="lg:col-span-7 p-6 rounded-2xl hud-card border border-cyan-500/25 flex flex-col justify-between space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
-                  <MonitorPlay className="w-4 h-4" />
-                  <span>TRANSMITTER HUD MONITOR</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {isCapturing && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-red-950/80 text-red-300 border border-red-500/40 animate-pulse">
-                      LIVE BROADCASTING
-                    </span>
-                  )}
-                  <span className="text-xs text-slate-500 font-mono">FPS: 30-60</span>
-                </div>
-              </div>
-
-              {/* Video Monitor Frame */}
-              <div className="w-full aspect-video rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden relative">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-contain ${isCapturing ? 'block' : 'hidden'}`}
-                />
-
-                {!isCapturing && (
-                  <div className="text-center p-6 space-y-2">
-                    <Tablet className="w-12 h-12 text-slate-600 mx-auto" />
-                    <div className="text-sm font-semibold text-slate-300">
-                      Monitor Standby
-                    </div>
-                    <p className="text-xs text-slate-500 max-w-sm">
-                      Click below to capture the tablet screen and initiate WebRTC video stream.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons (Large for Mouse) */}
-              <div className="flex items-center gap-3 pt-2">
-                {!isCapturing ? (
-                  <button
-                    onClick={startCapture}
-                    className="flex-1 min-h-[48px] rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.3)] active:scale-95"
-                  >
-                    <Play className="w-4 h-4 fill-slate-950" />
-                    <span>START TABLET SCREEN CAPTURE</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={stopCapture}
-                    className="flex-1 min-h-[48px] rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(239,68,68,0.3)] active:scale-95"
-                  >
-                    <Square className="w-4 h-4 fill-white" />
-                    <span>STOP BROADCAST</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Pairing & QR Connect Panel (5 Cols) */}
-            <div className="lg:col-span-5 p-6 rounded-2xl hud-card border border-slate-800 space-y-4 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-                    <QrCode className="w-4 h-4 text-cyan-400" />
-                    <span>Phone Pairing Channel</span>
-                  </h4>
-                  <span className="text-[10px] font-mono text-cyan-400">P2P WEBRTC</span>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Scan this code or open the pairing room on your smartphone to view the tablet screen stream.
-                </p>
-              </div>
-
-              {/* Holographic QR Code Representation */}
-              <div className="my-auto py-3 flex flex-col items-center justify-center">
-                <div className="p-4 rounded-xl bg-white border-2 border-cyan-400/50 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-                  {/* High Quality Stylized SVG QR Code */}
-                  <svg className="w-36 h-36" viewBox="0 0 100 100" fill="none">
-                    <rect width="100" height="100" fill="white" />
-                    {/* Corner 1 */}
-                    <rect x="10" y="10" width="25" height="25" rx="3" fill="#060814" />
-                    <rect x="15" y="15" width="15" height="15" fill="white" />
-                    <rect x="18" y="18" width="9" height="9" fill="#0891b2" />
-                    {/* Corner 2 */}
-                    <rect x="65" y="10" width="25" height="25" rx="3" fill="#060814" />
-                    <rect x="70" y="15" width="15" height="15" fill="white" />
-                    <rect x="73" y="18" width="9" height="9" fill="#0891b2" />
-                    {/* Corner 3 */}
-                    <rect x="10" y="65" width="25" height="25" rx="3" fill="#060814" />
-                    <rect x="15" y="70" width="15" height="15" fill="white" />
-                    <rect x="18" y="73" width="9" height="9" fill="#0891b2" />
-                    {/* Data Matrix Dots */}
-                    <rect x="42" y="15" width="6" height="6" fill="#060814" />
-                    <rect x="52" y="22" width="6" height="6" fill="#060814" />
-                    <rect x="42" y="38" width="8" height="8" fill="#7c3aed" />
-                    <rect x="65" y="45" width="6" height="6" fill="#060814" />
-                    <rect x="78" y="60" width="6" height="6" fill="#0891b2" />
-                    <rect x="48" y="65" width="8" height="8" fill="#060814" />
-                    <rect x="60" y="75" width="6" height="6" fill="#060814" />
-                    <rect x="75" y="80" width="6" height="6" fill="#7c3aed" />
-                    <rect x="40" y="85" width="6" height="6" fill="#060814" />
-                  </svg>
-                </div>
-                <div className="mt-2 text-[10px] font-mono text-slate-500">
-                  SESSION ID: {roomCode}
-                </div>
-              </div>
-
-              {/* Room Code Copy Target */}
-              <div className="pt-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 min-h-[42px] px-3 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-between text-xs font-mono text-cyan-300">
-                    <span>{roomCode}</span>
-                    <span className="text-[10px] text-slate-500">PAIRING PIN</span>
-                  </div>
-                  <button
-                    onClick={copyRoomCode}
-                    className="min-h-[42px] px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs text-slate-200 transition-colors cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedCode ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* OPTION 2: PHONE TO TABLET (INCOMING MIRROR) */}
-      {direction === 'phone_to_tablet' && (
-        <div className="space-y-6">
-          
-          {/* Honest Capability & Limitations Disclosure */}
-          <div className="p-5 rounded-2xl bg-purple-950/20 border border-purple-500/30 space-y-3">
-            <div className="flex items-start gap-3">
-              <ShieldAlert className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
-              <div className="text-xs space-y-1.5">
-                <div className="font-semibold text-purple-200 text-sm">
-                  Phone-to-Tablet Browser Limitation (Honest Status)
-                </div>
-                <p className="text-slate-300 leading-relaxed">
-                  Web browsers running on Android <strong>cannot natively act as a Chromecast or Miracast hardware sink</strong> without a native system service or dedicated WebRTC signaling broker running on your network.
-                </p>
-                <div className="p-3 rounded-lg bg-slate-900/80 border border-purple-500/20 space-y-1 text-slate-400">
-                  <span className="font-semibold text-purple-300">What works right now:</span>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    <li>Testing WebRTC peer receiver feeds via Session ID.</li>
-                    <li>Displaying phone notifications or text payloads beamed via WebRTC DataChannel.</li>
-                  </ul>
-                  <span className="font-semibold text-purple-300 block pt-1">What is not implemented in browser sandbox:</span>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    <li>Native Google Cast (mDNS broadcast discovery requires native Android OS permissions).</li>
-                    <li>Low-latency touch injection back to phone (restricted by Android security sandbox).</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Incoming Stream Receiver Simulator */}
-          <div className="p-6 rounded-2xl hud-card border border-slate-800 space-y-4">
+          {/* Polished Live Preview Panel with Verified Stream */}
+          <div className="p-5 md:p-6 rounded-2xl hud-card border border-cyan-500/25 space-y-4">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-                <Tv className="w-4 h-4 text-purple-400" />
-                <span>WebRTC Receiver Player</span>
-              </h4>
-              <span className="text-xs font-mono text-purple-400">STATUS: LISTENING</span>
+              <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
+                <MonitorPlay className="w-4 h-4" />
+                <span>BROWSER DISPLAY PREVIEW MONITOR</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {captureState === 'capturing' && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-red-950/90 text-red-300 border border-red-500/40 animate-pulse">
+                    LIVE MEDIA STREAM
+                  </span>
+                )}
+                {streamResolution && (
+                  <span className="text-xs text-slate-400 font-mono">{streamResolution}</span>
+                )}
+              </div>
             </div>
 
-            <div className="w-full aspect-video rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center p-6 text-center">
-              <div className="space-y-3">
-                <Smartphone className="w-10 h-10 text-slate-600 mx-auto animate-pulse" />
-                <div className="text-sm font-semibold text-slate-300">
-                  Awaiting Peer Video Stream from Phone
+            {/* Live Video Element (No fake images, honest stream only) */}
+            <div className="w-full aspect-video rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden relative">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-full object-contain ${captureState === 'capturing' ? 'block' : 'hidden'}`}
+              />
+
+              {captureState !== 'capturing' && (
+                <div className="text-center p-6 space-y-2">
+                  <Smartphone className="w-12 h-12 text-slate-600 mx-auto" />
+                  <div className="text-sm font-semibold text-slate-300">
+                    {captureState === 'requesting' ? 'Requesting Browser Permission...' : 'Stream Standby (Not Capturing)'}
+                  </div>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    {captureState === 'requesting'
+                      ? 'Select screen or tab in your browser prompt to begin rendering.'
+                      : 'Tap the button below to test if this browser allows live display capture. On Samsung M33 Android 14, system capture will trigger an OS restriction.'}
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  To stream your phone screen to this tablet with 0ms lag and mouse control, see the <strong>USB OTG &amp; Scrcpy Guide</strong>.
-                </p>
-              </div>
+              )}
+            </div>
+
+            {/* Start / Stop Controls (Large 48px hit targets for touch or mouse) */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              {captureState !== 'capturing' ? (
+                <button
+                  onClick={startCapture}
+                  disabled={captureState === 'requesting'}
+                  className="w-full sm:flex-1 min-h-[48px] rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.3)] touch-press disabled:opacity-60"
+                >
+                  <Play className="w-4 h-4 fill-slate-950" />
+                  <span>START BROWSER DISPLAY CAPTURE</span>
+                </button>
+              ) : (
+                <button
+                  onClick={stopCapture}
+                  className="w-full sm:flex-1 min-h-[48px] rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(239,68,68,0.3)] touch-press"
+                >
+                  <Square className="w-4 h-4 fill-white" />
+                  <span>STOP CAPTURE &amp; RELEASE TRACKS</span>
+                </button>
+              )}
             </div>
           </div>
 
         </div>
       )}
 
-      {/* OPTION 3: SCRCPY & USB OTG MASTER GUIDE (SPECIALLY FOR BROKEN TOUCHSCREEN) */}
-      {direction === 'scrcpy_guide' && (
-        <div className="space-y-6">
+      {/* TAB 2: NATIVE ANDROID COMPANION APP ARCHITECTURE (SAMSUNG M33 / ANDROID 14) */}
+      {activeTab === 'companion_spec' && (
+        <div className="space-y-4">
           
-          <div className="p-6 rounded-2xl hud-card border border-emerald-500/25 space-y-4">
+          <div className="p-5 md:p-6 rounded-2xl hud-card border border-purple-500/25 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-100">
+                  Samsung Galaxy M33 Android 14 Native Companion Spec
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Required MediaProjection architecture to mirror the entire phone screen into this web dashboard.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Because Android 14 One UI 6 forbids web browsers from capturing outside their own viewports, a native lightweight Android companion app or foreground service is the standard engineering pattern.
+            </p>
+
+            {/* 4-Step Architecture Flow */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-mono font-bold text-purple-400 flex items-center gap-1.5">
+                  <span>01. Android 14 Foreground Service</span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Must declare <code className="font-mono text-purple-300">FOREGROUND_SERVICE_MEDIA_PROJECTION</code> in <code className="font-mono text-slate-400">AndroidManifest.xml</code> with an active user-visible notification channel before starting screen capture.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-mono font-bold text-cyan-400 flex items-center gap-1.5">
+                  <span>02. MediaProjection Intent Flow</span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Companion app calls <code className="font-mono text-cyan-300">mediaProjectionManager.createScreenCaptureIntent()</code>, triggering Samsung's system warning prompt ("Start recording or casting?").
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1.5">
+                  <span>03. VirtualDisplay &amp; Hardware Encoder</span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Native service binds the MediaProjection token to a <code className="font-mono text-emerald-300">VirtualDisplay</code>, pipeing 1080×2408 frames directly into hardware H.264/VP8 <code className="font-mono text-slate-400">MediaCodec</code>.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-mono font-bold text-amber-400 flex items-center gap-1.5">
+                  <span>04. Secure Local Delivery to Dashboard</span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Transmits encoded frames over a local encrypted WebRTC P2P channel (DTLS-SRTP) or authenticated local WebSocket (<code className="font-mono text-amber-300">wss://192.168.x.x:8443</code>) directly to this web app.
+                </p>
+              </div>
+
+            </div>
+
+            {/* Kotlin Code Snippet */}
+            <div className="space-y-1.5 pt-2">
+              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span className="flex items-center gap-1.5">
+                  <Code2 className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Kotlin Companion Implementation (Android 14)</span>
+                </span>
+                <span className="text-[10px] text-slate-500">Android 14 (API 34)</span>
+              </div>
+              <pre className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto leading-relaxed">
+{`// AndroidManifest.xml (Android 14 One UI 6)
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+// MediaProjection Capture Service
+class OryqenCaptureService : Service() {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val notification = buildOngoingNotification()
+        // Required for Android 14
+        ServiceCompat.startForeground(
+            this, NOTIF_ID, notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        )
+        val projection = projectionManager.getMediaProjection(resultCode, data)
+        virtualDisplay = projection.createVirtualDisplay(
+            "OryqenMirror", 1080, 2408, dpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            mediaCodecSurface, null, null
+        )
+        return START_STICKY
+    }
+}`}
+              </pre>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB 3: SCRCPY & WIRELESS ADB GUIDE (IMMEDIATELY USABLE WITH ZERO APP CODING) */}
+      {activeTab === 'scrcpy_guide' && (
+        <div className="space-y-4">
+          
+          <div className="p-5 md:p-6 rounded-2xl hud-card border border-emerald-500/25 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
                 <Cable className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-100">
-                  Broken Touchscreen Tablet: The Ultimate Setup
+                <h3 className="text-base font-bold text-slate-100">
+                  Samsung Galaxy M33 Mirroring via Scrcpy (0ms Lag)
                 </h3>
                 <p className="text-xs text-slate-400">
-                  How to turn this old tablet into a permanent kiosk with a USB mouse and full remote screen control.
+                  The recommended, free, open-source method to mirror and control your Samsung M33 screen without root.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
               
-              {/* Step 1: Hardware USB OTG */}
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-                <div className="text-xs font-mono text-emerald-400 font-semibold">
-                  01. USB OTG "Y-CABLE" (CHARGE + MOUSE)
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-mono font-bold text-emerald-400">
+                  01. Enable Samsung Developer Options
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Old tablets only have one Micro-USB or Type-C port. A standard <strong>OTG Y-Cable</strong> or powered USB-C hub allows you to connect both your <strong>USB mouse</strong> and the <strong>power charger</strong> simultaneously, so the tablet never shuts down.
+                <p className="text-xs text-slate-300">
+                  On your Samsung Galaxy M33: Go to <strong>Settings → About Phone → Software Information</strong>. Tap <strong>Build Number</strong> 7 times until Developer Mode is activated.
                 </p>
               </div>
 
-              {/* Step 2: Scrcpy Zero Latency Mirroring */}
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-                <div className="text-xs font-mono text-cyan-400 font-semibold">
-                  02. SCRCPY SCREEN CONTROL (USB / WI-FI)
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-mono font-bold text-cyan-400">
+                  02. Enable Wireless Debugging (Android 14)
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  <strong>scrcpy</strong> (Screen Copy) is the world's fastest open-source screen mirror tool. It lets you display and control this Android tablet with mouse and keyboard with ultra-low latency (30~70ms).
+                <p className="text-xs text-slate-300">
+                  In <strong>Settings → Developer Options</strong>, enable <strong>USB Debugging</strong> and <strong>Wireless Debugging</strong>. Pair with your local Wi-Fi network.
                 </p>
               </div>
 
             </div>
 
-            {/* Quick Terminal Command Reference */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            {/* Quick Command Box */}
+            <div className="space-y-1.5 pt-1">
               <div className="flex items-center justify-between text-xs font-mono text-slate-400">
                 <span className="flex items-center gap-1.5">
                   <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Wireless ADB Setup Commands</span>
+                  <span>Terminal Directives (PC, Mac, or Local Terminal)</span>
                 </span>
-                <span className="text-[10px] text-slate-500">Run on PC / Host Terminal</span>
+                <span className="text-[10px] text-slate-500">Free Open-Source Scrcpy</span>
               </div>
 
               <div className="space-y-1.5 font-mono text-xs">
-                <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-cyan-300 flex items-center justify-between">
-                  <code>adb tcpip 5555</code>
-                  <span className="text-[10px] text-slate-500">Enable wireless port</span>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 flex items-center justify-between">
+                  <code>adb pair 192.168.1.xxx:&lt;port&gt; &lt;pairing-code&gt;</code>
+                  <span className="text-[10px] text-slate-500">Pair M33</span>
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-purple-300 flex items-center justify-between">
-                  <code>adb connect &lt;tablet-ip-address&gt;:5555</code>
-                  <span className="text-[10px] text-slate-500">Pair tablet wirelessly</span>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-purple-300 flex items-center justify-between">
+                  <code>adb connect 192.168.1.xxx:5555</code>
+                  <span className="text-[10px] text-slate-500">Connect</span>
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-emerald-300 flex items-center justify-between">
-                  <code>scrcpy --tcpip=&lt;tablet-ip&gt; --stay-awake</code>
-                  <span className="text-[10px] text-slate-500">Launch mirror &amp; keep awake</span>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-emerald-300 flex items-center justify-between">
+                  <code>scrcpy --max-size=1600 --stay-awake --video-bit-rate=8M</code>
+                  <span className="text-[10px] text-slate-500">Launch 120Hz Mirror</span>
                 </div>
               </div>
-            </div>
-
-            {/* Remote Apps */}
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-              <div className="text-xs font-mono text-purple-400 font-semibold">
-                HEADLESS TOOLS FOR BROKEN SCREENS
-              </div>
-              <p className="text-xs text-slate-300">
-                If the touchscreen is completely dead, install <strong>RustDesk</strong> (open source) or <strong>AnyDesk</strong> on the tablet using the USB mouse. Grant accessibility permissions once, and you can control the tablet anytime from your smartphone!
-              </p>
             </div>
 
           </div>

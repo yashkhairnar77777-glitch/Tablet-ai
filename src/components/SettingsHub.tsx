@@ -74,14 +74,20 @@ export const SettingsHub: React.FC<Props> = ({
     window.speechSynthesis.speak(utt);
   };
 
-  const netlifyTomlContent = `[[redirects]]
-  from = "/*"
-  to = "/index.html"
+  const netlifyTomlContent = `[build]
+  publish = "dist"
+  command = "npm run build"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
   status = 200
 
-[build]
-  publish = "dist"
-  command = "npm run build"`;
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200`;
 
   const handleCopyToml = () => {
     playHudSound('click', settings.clickSound);
@@ -274,6 +280,175 @@ export const SettingsHub: React.FC<Props> = ({
             >
               {settings.highContrast ? 'ACTIVE' : 'STANDARD'}
             </button>
+          </div>
+
+        </div>
+
+        {/* Module 1.5: Touchscreen & Digitizer Calibration */}
+        <div className="p-6 rounded-2xl hud-card border border-cyan-500/25 space-y-5">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
+                <Sliders className="w-4 h-4" />
+              </div>
+              <h3 className="text-base font-semibold text-slate-100">
+                Touchscreen &amp; Digitizer Calibration
+              </h3>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
+              M33 &amp; Tablet
+            </span>
+          </div>
+
+          {/* Ghost Touch Shield Toggle (Crucial for broken tablet screens) */}
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-100 flex items-center gap-2">
+                  <span>Ghost Touch Shield</span>
+                  {settings.ghostTouchShield && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-500/40">
+                      MOUSE ONLY
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Suppresses erratic phantom touches from cracked glass digitizers so USB mouse cursor clicks without interference.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  playHudSound('toggle', settings.clickSound);
+                  onUpdateSettings({ ghostTouchShield: !settings.ghostTouchShield });
+                }}
+                className={`min-h-[44px] px-4 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap ml-3 ${
+                  settings.ghostTouchShield
+                    ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.5)]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-400'
+                }`}
+              >
+                {settings.ghostTouchShield ? 'SHIELD ON' : 'TOUCH ON'}
+              </button>
+            </div>
+          </div>
+
+          {/* Haptic Vibration Feedback */}
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex-1 pr-3">
+              <div className="text-sm font-medium text-slate-200 flex items-center gap-2">
+                <span>Tactile Haptic Feedback</span>
+                <span className="text-[10px] font-mono text-cyan-400">
+                  {typeof navigator !== 'undefined' && 'vibrate' in navigator ? 'Hardware Motor Ready' : 'Simulated'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Fires micro-vibrations on button taps and fan dials (Samsung M33 and Android tablets).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  playHudSound('toggle', settings.clickSound, true);
+                  onUpdateSettings({ touchHaptics: !settings.touchHaptics });
+                }}
+                className={`min-h-[44px] px-3.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                  settings.touchHaptics
+                    ? 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-400'
+                }`}
+              >
+                {settings.touchHaptics ? 'ENABLED' : 'MUTED'}
+              </button>
+
+              <button
+                onClick={() => {
+                  playHudSound('click', settings.clickSound, true);
+                  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+                    navigator.vibrate([20, 40, 20]);
+                  }
+                }}
+                className="min-h-[44px] px-3 py-1.5 text-xs font-mono text-slate-300 hover:text-cyan-300 bg-slate-900 border border-slate-700 hover:border-cyan-500/40 rounded-xl transition-colors cursor-pointer"
+                title="Test hardware vibration motor"
+              >
+                Test Buzz
+              </button>
+            </div>
+          </div>
+
+          {/* Horizontal Swipe Gestures */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+            <div className="flex-1 pr-3">
+              <div className="text-sm font-medium text-slate-200">Horizontal Swipe Navigation</div>
+              <p className="text-xs text-slate-400">
+                Swipe left or right across the screen to transition smoothly between HUD dashboards.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                playHudSound('toggle', settings.clickSound, settings.touchHaptics);
+                onUpdateSettings({ touchGestures: !settings.touchGestures });
+              }}
+              className={`min-h-[44px] px-4 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                settings.touchGestures
+                  ? 'bg-purple-600 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                  : 'bg-slate-900 border border-slate-700 text-slate-400'
+              }`}
+            >
+              {settings.touchGestures ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          {/* Touch Contact Ripples */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+            <div className="flex-1 pr-3">
+              <div className="text-sm font-medium text-slate-200">Holographic Touch Wave Ripples</div>
+              <p className="text-xs text-slate-400">
+                Renders a glowing HUD contact wave wherever a finger taps the digitizer glass.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                playHudSound('toggle', settings.clickSound, settings.touchHaptics);
+                onUpdateSettings({ touchRipple: !settings.touchRipple });
+              }}
+              className={`min-h-[44px] px-4 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                settings.touchRipple
+                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                  : 'bg-slate-900 border border-slate-700 text-slate-400'
+              }`}
+            >
+              {settings.touchRipple ? 'ACTIVE' : 'OFF'}
+            </button>
+          </div>
+
+          {/* Touch Target Hitbox Sizing */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+            <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+              <span>Touch Target Hitbox Size</span>
+              <span className="text-cyan-300 font-bold capitalize">{settings.touchTargetSize}</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Enlarges buttons and interactive surfaces to 52px+ for effortless one-handed thumb or mouse tapping.
+            </p>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {(['standard', 'enlarged'] as const).map((sz) => (
+                <button
+                  key={sz}
+                  onClick={() => {
+                    playHudSound('click', settings.clickSound, settings.touchHaptics);
+                    onUpdateSettings({ touchTargetSize: sz });
+                  }}
+                  className={`min-h-[44px] rounded-xl text-xs font-mono capitalize border transition-all cursor-pointer ${
+                    settings.touchTargetSize === sz
+                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {sz === 'standard' ? 'Standard (44px min)' : 'Enlarged (52px Touch-First)'}
+                </button>
+              ))}
+            </div>
           </div>
 
         </div>

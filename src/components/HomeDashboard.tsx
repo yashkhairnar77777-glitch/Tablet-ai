@@ -219,7 +219,7 @@ export const HomeDashboard: React.FC<Props> = ({
                 playHudSound('click', soundEnabled);
                 setIs24Hour(!is24Hour);
               }}
-              className="px-2.5 py-1 text-[11px] font-mono text-slate-400 hover:text-cyan-300 bg-slate-900/80 rounded border border-slate-700 hover:border-cyan-500/40 transition-colors cursor-pointer"
+              className="min-h-[44px] px-3 py-2 text-xs font-mono text-slate-300 hover:text-cyan-300 bg-slate-900/90 rounded-xl border border-slate-700 hover:border-cyan-500/40 transition-all cursor-pointer touch-press"
             >
               {is24Hour ? 'FORMAT: 24H' : 'FORMAT: 12H'}
             </button>
@@ -227,47 +227,47 @@ export const HomeDashboard: React.FC<Props> = ({
 
           {/* Large Futuristic Glowing Time Numbers */}
           <div className="my-auto py-2">
-            <div className="flex items-baseline gap-2 md:gap-3">
-              <span className="text-5xl sm:text-7xl md:text-8xl font-mono font-bold tracking-tight text-slate-100 glow-cyan tabular-nums">
+            <div className="flex flex-wrap items-baseline gap-1.5 sm:gap-2 md:gap-3">
+              <span className="text-4xl sm:text-6xl md:text-8xl font-mono font-bold tracking-tight text-slate-100 glow-cyan tabular-nums">
                 {hoursStr}
               </span>
-              <span className="text-4xl sm:text-6xl md:text-7xl font-mono font-light text-cyan-400/80 animate-pulse">
+              <span className="text-3xl sm:text-5xl md:text-7xl font-mono font-light text-cyan-400/80 animate-pulse">
                 :
               </span>
-              <span className="text-5xl sm:text-7xl md:text-8xl font-mono font-bold tracking-tight text-slate-100 glow-cyan tabular-nums">
+              <span className="text-4xl sm:text-6xl md:text-8xl font-mono font-bold tracking-tight text-slate-100 glow-cyan tabular-nums">
                 {minutes}
               </span>
-              <span className="text-4xl sm:text-6xl md:text-7xl font-mono font-light text-cyan-400/80 animate-pulse">
+              <span className="text-3xl sm:text-5xl md:text-7xl font-mono font-light text-cyan-400/80 animate-pulse">
                 :
               </span>
-              <span className="text-4xl sm:text-5xl md:text-6xl font-mono font-semibold tracking-tight text-purple-400 glow-violet tabular-nums">
+              <span className="text-3xl sm:text-4xl md:text-6xl font-mono font-semibold tracking-tight text-purple-400 glow-violet tabular-nums">
                 {seconds}
               </span>
               {ampm && (
-                <span className="text-lg sm:text-2xl font-mono font-semibold text-slate-400 ml-1">
+                <span className="text-base sm:text-xl md:text-2xl font-mono font-semibold text-slate-400 ml-1">
                   {ampm}
                 </span>
               )}
             </div>
 
             {/* Date Display */}
-            <div className="mt-3 flex items-center gap-3 text-xs sm:text-sm font-mono tracking-wider text-slate-300">
+            <div className="mt-3 flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm font-mono tracking-wider text-slate-300">
               <span className="text-cyan-400 font-semibold">{formattedDate}</span>
-              <span className="text-slate-600">|</span>
+              <span className="text-slate-600 hidden xs:inline">|</span>
               <span className="text-slate-400">UPTIME: {Math.floor(telemetry.uptimeSeconds / 60)}m {telemetry.uptimeSeconds % 60}s</span>
             </div>
           </div>
 
           {/* Quick HUD Navigation Shortcuts */}
-          <div className="pt-4 mt-4 border-t border-slate-800/80 flex flex-wrap items-center gap-2">
+          <div className="pt-4 mt-4 border-t border-slate-800/80 flex flex-wrap items-center gap-2.5">
             <button
               onClick={() => {
                 playHudSound('wake', soundEnabled);
                 onNavigate('voice');
               }}
-              className="px-3.5 py-2 rounded-lg bg-cyan-950/40 border border-cyan-400/40 text-cyan-300 hover:bg-cyan-900/50 hover:border-cyan-300 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+              className="min-h-[48px] px-4 py-2.5 rounded-xl bg-cyan-950/50 border border-cyan-400/50 text-cyan-200 hover:bg-cyan-900/60 hover:border-cyan-300 text-xs font-mono font-medium flex items-center gap-2.5 transition-all cursor-pointer shadow-sm touch-press"
             >
-              <Mic className="w-3.5 h-3.5 text-cyan-400" />
+              <Mic className="w-4 h-4 text-cyan-400" />
               <span>Voice AI Console</span>
             </button>
 
@@ -276,9 +276,9 @@ export const HomeDashboard: React.FC<Props> = ({
                 playHudSound('click', soundEnabled);
                 onNavigate('smarthome');
               }}
-              className="px-3.5 py-2 rounded-lg bg-purple-950/40 border border-purple-500/40 text-purple-300 hover:bg-purple-900/50 hover:border-purple-400 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+              className="min-h-[48px] px-4 py-2.5 rounded-xl bg-purple-950/50 border border-purple-500/50 text-purple-200 hover:bg-purple-900/60 hover:border-purple-300 text-xs font-mono font-medium flex items-center gap-2.5 transition-all cursor-pointer shadow-sm touch-press"
             >
-              <Lightbulb className="w-3.5 h-3.5 text-purple-400" />
+              <Lightbulb className="w-4 h-4 text-purple-400" />
               <span>Smart Home Hub</span>
             </button>
 
@@ -287,13 +287,13 @@ export const HomeDashboard: React.FC<Props> = ({
                 playHudSound('click', soundEnabled);
                 onToggleWakeLock();
               }}
-              className={`px-3.5 py-2 rounded-lg border text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 ${
+              className={`min-h-[48px] px-4 py-2.5 rounded-xl border text-xs font-mono font-medium flex items-center gap-2.5 transition-all cursor-pointer shadow-sm touch-press ${
                 wakeLockActive
-                  ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
-                  : 'bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200'
+                  ? 'bg-amber-950/50 border-amber-500/60 text-amber-200'
+                  : 'bg-slate-900/90 border-slate-700 text-slate-300 hover:text-slate-100'
               }`}
             >
-              <Eye className="w-3.5 h-3.5" />
+              <Eye className="w-4 h-4" />
               <span>{wakeLockActive ? 'Screen Awake: ACTIVE' : 'Screen Awake: OFF'}</span>
             </button>
           </div>
@@ -440,7 +440,7 @@ export const HomeDashboard: React.FC<Props> = ({
                 playHudSound('fan', soundEnabled);
                 onUpdateHavellsFan({ power: !havellsFan.power });
               }}
-              className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+              className={`min-h-[48px] px-5 py-2.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer touch-press ${
                 havellsFan.power
                   ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
                   : 'bg-slate-900 text-slate-400 border border-slate-700 hover:border-slate-600'
@@ -450,7 +450,7 @@ export const HomeDashboard: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Quick Speed Selector Buttons (Large for Mouse) */}
+          {/* Quick Speed Selector Buttons (Touch & Mouse Optimized) */}
           <div className="grid grid-cols-5 gap-2 pt-2">
             {[1, 2, 3, 4, 5].map((lvl) => {
               const isCurrent = havellsFan.power && havellsFan.speed === lvl;
@@ -461,14 +461,14 @@ export const HomeDashboard: React.FC<Props> = ({
                     playHudSound('fan', soundEnabled);
                     onUpdateHavellsFan({ power: true, speed: lvl, estimatedRpm: 120 + lvl * 45 });
                   }}
-                  className={`min-h-[44px] rounded-lg font-mono text-xs font-semibold flex flex-col items-center justify-center border transition-all cursor-pointer ${
+                  className={`min-h-[50px] rounded-xl font-mono text-xs font-semibold flex flex-col items-center justify-center border transition-all cursor-pointer touch-press ${
                     isCurrent
-                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
-                      : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                      ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.35)]'
+                      : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                   }`}
                 >
                   <span className="text-[10px] text-slate-500">LVL</span>
-                  <span>{lvl}</span>
+                  <span className="text-sm font-bold">{lvl}</span>
                 </button>
               );
             })}

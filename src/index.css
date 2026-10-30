@@ -6,13 +6,61 @@
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
 
-  body {
+  * {
+    /* Eliminate default gray/blue tap highlight box on Android browsers */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
     font-family: var(--font-sans);
     background-color: #060814;
     color: #e2e8f0;
     min-height: 100vh;
+    /* Remove 300ms double-tap delay on mobile touchscreens */
     touch-action: manipulation;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
+
+  /* Prevent accidental text selection during rapid button tapping */
+  button, [role="button"], a, .interactive-card {
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+/* Tactile Active Press Response for Touch & Mouse */
+.touch-press {
+  transition: transform 0.1s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.1s ease;
+}
+
+.touch-press:active {
+  transform: scale(0.96);
+  opacity: 0.92;
+}
+
+/* Touch Ripple Glow Wave Animation */
+@keyframes touchWave {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.2);
+    opacity: 0;
+  }
+}
+
+.animate-touch-wave {
+  animation: touchWave 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Touch Targets Enlarged Mode for Tablet and Mobile Touch */
+.touch-targets-enlarged button:not(.btn-compact),
+.touch-targets-enlarged [role="button"]:not(.btn-compact) {
+  min-height: 52px;
 }
 
 /* Subtle Sci-Fi Grid Background */

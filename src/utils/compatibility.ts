@@ -16,8 +16,14 @@ export function checkBrowserCapabilities(): BrowserCapability[] {
   // Check Wake Lock
   const wakeLockSupported = 'wakeLock' in navigator;
 
+  // Detect if on mobile / Android device
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  const isSamsung = typeof navigator !== 'undefined' && /Samsung/i.test(navigator.userAgent);
+
   // Check Screen Capture
-  const screenCaptureSupported = !!(navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices);
+  const screenCaptureApiExists = !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+  // On Android, getDisplayMedia is either completely unavailable or strictly sandboxed to browser tab sharing
+  const screenCaptureSupported = screenCaptureApiExists && !isAndroid;
 
   // Check Battery API
   const batterySupported = 'getBattery' in navigator;
@@ -30,6 +36,13 @@ export function checkBrowserCapabilities(): BrowserCapability[] {
     document.fullscreenEnabled ||
     (document as unknown as { webkitFullscreenEnabled?: boolean }).webkitFullscreenEnabled
   );
+
+  // Check Touchscreen & Multi-Touch Digitizer
+  const touchSupported = Boolean(isClient && ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)));
+  const maxTouchPoints = isClient ? (navigator.maxTouchPoints || 0) : 0;
+
+  // Check Vibration Motor (Haptic Feedback)
+  const vibrationSupported = isClient && 'vibrate' in navigator;
 
   // Check LocalStorage
   let localStorageSupported = false;
@@ -47,37 +60,38 @@ export function checkBrowserCapabilities(): BrowserCapability[] {
       name: 'Speech Recognition (STT)',
       supported: speechRecogSupported,
       details: speechRecogSupported
-        ? 'Browser supports Web Speech Recognition for voice control.'
+        ? 'Browser supports Web Speech Recognition for push-to-talk voice directives.'
         : 'Not supported on this browser engine. Chrome or Edge for Android recommended.',
-      recommendation: speechRecogSupported ? undefined : 'Install Chrome or Kiwi Browser for full speech recognition.'
+      recommendation: speechRecogSupported ? undefined : 'Install Chrome or Kiwi Browser for speech recognition.'
+    },
+    {
+      id: 'wake-word',
+      name: 'Continuous Background Wake-Word',
+      supported: false, // Honestly unsupported in web browsers
+      details: 'Always-on background wake-word listening ("Alexa", "Hey Oryqen") is blocked by browser sandbox and battery suspension.',
+      recommendation: 'Use Push-to-Talk in-tab. Continuous background listening requires an Android native foreground service.'
     },
     {
       id: 'speech-synthesis',
       name: 'Speech Synthesis (TTS)',
       supported: speechSynthSupported,
       details: speechSynthSupported
-        ? 'Browser can vocalize responses through tablet speakers.'
+        ? 'Browser can vocalize natural Alexa-style spoken responses through device speakers.'
         : 'Speech synthesis is disabled or unavailable.',
-      recommendation: speechSynthSupported ? undefined : 'Ensure Google Text-to-Speech is enabled in Android settings.'
-    },
-    {
-      id: 'wake-lock',
-      name: 'Screen Wake Lock API',
-      supported: wakeLockSupported,
-      details: wakeLockSupported
-        ? 'Can prevent tablet screen from sleeping while plugged in or mounted.'
-        : 'Wake lock not supported on this browser version.',
-      recommendation: wakeLockSupported ? undefined : 'Enable "Stay Awake" in Android Developer Options while charging.'
+      recommendation: speechSynthSupported ? undefined : 'Ensure Google Speech Services / Samsung TTS is enabled in Android settings.'
     },
     {
       id: 'screen-capture',
-      name: 'Display Screen Capture',
-      supported: screenCaptureSupported,
-      details: screenCaptureSupported
-        ? 'Supports live WebRTC display capture for tablet screen broadcasting.'
-        : 'Mobile browsers often restrict getDisplayMedia for security.',
-      recommendation: screenCaptureSupported ? undefined : 'Use scrcpy over USB OTG/Wi-Fi for reliable low-latency mirroring.'
+      name: 'Full OS Screen Capture',
+      supported: false, // Honesty: Web pages on Android 14 cannot capture system screen
+      details: screenCaptureApiExists
+        ? (isAndroid 
+            ? 'Browser API exists but Android 14 One UI 6 blocks system-wide capture from web tabs for security.'
+            : 'Desktop browser capture available. On Android, full-screen capture is restricted.')
+        : 'getDisplayMedia API is not available on this mobile browser.',
+      recommendation: 'Requires the Android Companion App (MediaProjection API) or scrcpy via USB/Wi-Fi.'
     },
+
     {
       id: 'battery-api',
       name: 'Battery Telemetry API',
@@ -112,6 +126,24 @@ export function checkBrowserCapabilities(): BrowserCapability[] {
       details: fullscreenSupported
         ? 'Can enter immersive full-screen mode to hide Android navigation bar.'
         : 'Fullscreen API is disabled.',
+      recommendation: undefined
+    },
+    {
+      id: 'touch-digitizer',
+      name: 'Touchscreen Multi-Touch',
+      supported: touchSupported,
+      details: touchSupported
+        ? `Hardware digitizer supports up to ${maxTouchPoints} simultaneous touch points with gesture navigation.`
+        : 'Touch digitizer offline or broken. Use USB mouse or external trackball.',
+      recommendation: touchSupported ? undefined : 'Enable Ghost Touch Shield in Settings if damaged glass produces phantom clicks.'
+    },
+    {
+      id: 'haptic-vibration',
+      name: 'Haptic Vibration Motor',
+      supported: vibrationSupported,
+      details: vibrationSupported
+        ? 'Hardware vibration motor ready for tactile click feedback on Samsung M33/tablets.'
+        : 'Vibration API unavailable or unsupported on this device.',
       recommendation: undefined
     },
     {

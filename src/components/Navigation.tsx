@@ -145,8 +145,27 @@ export const Navigation: React.FC<Props> = ({
         </div>
       </header>
 
-      {/* Mobile & Tablet Bottom Dock for Easy Mouse Targeting */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#060814]/95 backdrop-blur-xl border-t border-cyan-500/20 px-2 py-1.5 pb-safe">
+      {/* Mobile & Tablet Bottom Dock with Touch Gesture Position Dots */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#060814]/95 backdrop-blur-xl border-t border-cyan-500/20 px-2 pt-1 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.5)]">
+        
+        {/* Subtle Swipe Carousel Dot Track (Mobile & Tablet) */}
+        <div className="flex items-center justify-center gap-1.5 pb-1">
+          {navItems.map((item) => {
+            const isActive = currentView === item.id;
+            return (
+              <span
+                key={`dot-${item.id}`}
+                className={`h-1 rounded-full transition-all duration-300 ${
+                  isActive
+                    ? 'w-5 bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)]'
+                    : 'w-1 bg-slate-700'
+                }`}
+                aria-hidden="true"
+              />
+            );
+          })}
+        </div>
+
         <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -155,13 +174,13 @@ export const Navigation: React.FC<Props> = ({
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`min-h-[48px] flex flex-col items-center justify-center rounded-lg transition-colors cursor-pointer ${
+                className={`min-h-[50px] flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer touch-press ${
                   isActive
-                    ? 'text-cyan-300 bg-cyan-950/40 border border-cyan-400/40'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'text-cyan-300 bg-cyan-950/60 border border-cyan-400/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
               >
-                <Icon className="w-5 h-5 mb-0.5" />
+                <Icon className={`w-5 h-5 mb-0.5 ${isActive ? 'text-cyan-300' : 'text-slate-400'}`} />
                 <span className="text-[10px] font-medium tracking-tight whitespace-nowrap">
                   {item.label.split(' ')[0]}
                 </span>

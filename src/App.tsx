@@ -34,8 +34,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   highContrast: false,
   smartThingsPat: '',
   havellsBridgeIp: '192.168.1.145',
-  havellsLocalKey: ''
+  havellsLocalKey: '',
+  touchHaptics: true,
+  touchGestures: true,
+  touchRipple: true,
+  ghostTouchShield: false,
+  touchTargetSize: 'standard'
 };
+
+const VIEW_ORDER: NavView[] = ['home', 'voice', 'smarthome', 'screenshare', 'settings'];
 
 const DEFAULT_HAVELLS_FAN: HavellsFanState = {
   power: false,
@@ -304,6 +311,51 @@ export default function App() {
     return () => clearInterval(breezeInterval);
   }, [havellsFan.power, havellsFan.breezeMode]);
 
+  // Horizontal Swipe Gestures to navigate views on touchscreens
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!settings.touchGestures || settings.ghostTouchShield) return;
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'CANVAS' || target.closest('input, textarea, canvas'))) {
+      return;
+    }
+    if (e.touches.length === 1) {
+      touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        time: Date.now()
+      };
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current || !settings.touchGestures || settings.ghostTouchShield) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    const elapsed = Date.now() - touchStartRef.current.time;
+    touchStartRef.current = null;
+
+    // Minimum swipe distance 60px, horizontal dominance (> 1.4x vertical), under 500ms
+    if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4 && elapsed < 500) {
+      const currentIndex = VIEW_ORDER.indexOf(currentView);
+      if (deltaX < 0 && currentIndex < VIEW_ORDER.length - 1) {
+        // Swiped Left -> Next View
+        const nextView = VIEW_ORDER[currentIndex + 1];
+        playHudSound('toggle', settings.clickSound, settings.touchHaptics);
+        setCurrentView(nextView);
+      } else if (deltaX > 0 && currentIndex > 0) {
+        // Swiped Right -> Previous View
+        const prevView = VIEW_ORDER[currentIndex - 1];
+        playHudSound('toggle', settings.clickSound, settings.touchHaptics);
+        setCurrentView(prevView);
+      }
+    }
+  };
+
   // UI scale classes
   const uiScaleClass = {
     compact: 'text-sm scale-95 origin-top',
@@ -312,15 +364,23 @@ export default function App() {
     kiosk: 'text-base sm:text-lg sm:scale-105 origin-top'
   }[settings.uiScale];
 
+  const touchEnlargedClass = settings.touchTargetSize === 'enlarged' ? 'touch-targets-enlarged' : '';
+
   return (
-    <div className={`min-h-screen bg-[#060814] text-slate-100 flex flex-col relative pb-20 lg:pb-8 hud-grid-bg ${
-      settings.highContrast ? 'contrast-125 brightness-110' : ''
-    }`}>
+    <div 
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className={`min-h-screen bg-[#060814] text-slate-100 flex flex-col relative pb-20 lg:pb-8 hud-grid-bg ${
+        settings.highContrast ? 'contrast-125 brightness-110' : ''
+      } ${touchEnlargedClass}`}
+    >
       
-      {/* High-visibility USB Mouse Cursor Spotlight for cracked/dim tablet screen */}
+      {/* High-visibility USB Mouse Cursor Spotlight + Touch Ripple Overlay */}
       <MousePointerOverlay
         enabled={settings.pointerSpotlight}
         color={settings.pointerColor}
+        touchRipple={settings.touchRipple}
+        ghostTouchShield={settings.ghostTouchShield}
       />
 
       {/* Navigation Top Bar Contract & Mobile Dock */}

@@ -54,7 +54,19 @@ export interface VoiceMessage {
   text: string;
   timestamp: string;
   intent?: string;
+  source?: 'gemini_ai' | 'local_rule' | 'system';
+  status?: 'pending' | 'success' | 'fallback';
+  model?: string;
 }
+
+export type BrowserCaptureState = 
+  | 'idle' 
+  | 'requesting' 
+  | 'capturing' 
+  | 'unsupported' 
+  | 'permission_denied' 
+  | 'error';
+
 
 export interface AppSettings {
   demoMode: boolean;
@@ -72,6 +84,12 @@ export interface AppSettings {
   smartThingsPat: string;
   havellsBridgeIp: string;
   havellsLocalKey: string;
+  // Touch & Gesture Ergonomics
+  touchHaptics: boolean;
+  touchGestures: boolean;
+  touchRipple: boolean;
+  ghostTouchShield: boolean;
+  touchTargetSize: 'standard' | 'enlarged';
 }
 
 export interface BrowserCapability {

@@ -19,7 +19,55 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
-export function playHudSound(type: 'click' | 'wake' | 'success' | 'alert' | 'fan' | 'toggle', enabled: boolean = true) {
+/**
+ * Triggers subtle tactile haptic vibration feedback using the Vibration API.
+ * Ideal for Samsung Galaxy M33 and Android tablets with vibration motors.
+ */
+export function triggerHaptic(
+  type: 'selection' | 'light' | 'medium' | 'heavy' | 'success' | 'alert' = 'light',
+  enabled: boolean = true
+) {
+  if (!enabled || typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+  try {
+    switch (type) {
+      case 'selection':
+        navigator.vibrate(8);
+        break;
+      case 'light':
+        navigator.vibrate(14);
+        break;
+      case 'medium':
+        navigator.vibrate(28);
+        break;
+      case 'heavy':
+        navigator.vibrate(45);
+        break;
+      case 'success':
+        navigator.vibrate([15, 40, 20]);
+        break;
+      case 'alert':
+        navigator.vibrate([35, 60, 35]);
+        break;
+    }
+  } catch {
+    // Gracefully ignore vibration errors
+  }
+}
+
+export function playHudSound(
+  type: 'click' | 'wake' | 'success' | 'alert' | 'fan' | 'toggle',
+  enabled: boolean = true,
+  hapticEnabled: boolean = true
+) {
+  if (hapticEnabled) {
+    if (type === 'click') triggerHaptic('selection', true);
+    else if (type === 'toggle') triggerHaptic('light', true);
+    else if (type === 'fan') triggerHaptic('light', true);
+    else if (type === 'success') triggerHaptic('success', true);
+    else if (type === 'alert') triggerHaptic('alert', true);
+    else if (type === 'wake') triggerHaptic('medium', true);
+  }
+
   if (!enabled) return;
   try {
     const ctx = getAudioContext();

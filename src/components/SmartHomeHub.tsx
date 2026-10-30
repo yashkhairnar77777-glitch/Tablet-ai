@@ -334,7 +334,7 @@ export const SmartHomeHub: React.FC<Props> = ({
                             estimatedRpm: 120 + lvl * 45
                           });
                         }}
-                        className={`min-h-[52px] rounded-xl font-mono flex flex-col items-center justify-center border transition-all cursor-pointer ${
+                        className={`min-h-[52px] rounded-xl font-mono flex flex-col items-center justify-center border transition-all cursor-pointer touch-press ${
                           active
                             ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
                             : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-100 hover:border-slate-700'
@@ -356,7 +356,7 @@ export const SmartHomeHub: React.FC<Props> = ({
                     playHudSound('toggle', soundEnabled);
                     onUpdateHavellsFan({ breezeMode: !havellsFan.breezeMode });
                   }}
-                  className={`min-h-[48px] p-3 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                  className={`min-h-[50px] p-3 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer touch-press ${
                     havellsFan.breezeMode
                       ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-200'
                       : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:border-slate-700'
@@ -377,7 +377,7 @@ export const SmartHomeHub: React.FC<Props> = ({
                       direction: havellsFan.direction === 'forward' ? 'reverse' : 'forward'
                     });
                   }}
-                  className="min-h-[48px] p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:border-slate-700 text-left flex items-center justify-between transition-all cursor-pointer"
+                  className="min-h-[50px] p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:border-slate-700 text-left flex items-center justify-between transition-all cursor-pointer touch-press"
                 >
                   <div>
                     <div className="text-xs font-medium text-slate-200">Direction</div>
@@ -395,7 +395,7 @@ export const SmartHomeHub: React.FC<Props> = ({
                     const nextTimer = havellsFan.timerMinutes === 0 ? 60 : havellsFan.timerMinutes === 60 ? 120 : havellsFan.timerMinutes === 120 ? 240 : 0;
                     onUpdateHavellsFan({ timerMinutes: nextTimer });
                   }}
-                  className="min-h-[48px] p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:border-slate-700 text-left flex items-center justify-between transition-all cursor-pointer"
+                  className="min-h-[50px] p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:border-slate-700 text-left flex items-center justify-between transition-all cursor-pointer touch-press"
                 >
                   <div>
                     <div className="text-xs font-medium text-slate-200">Auto Timer</div>
@@ -425,7 +425,7 @@ export const SmartHomeHub: React.FC<Props> = ({
                         }
                       });
                     }}
-                    className={`px-3 py-1 text-xs font-mono rounded border transition-colors cursor-pointer ${
+                    className={`min-h-[44px] px-4 py-1.5 text-xs font-mono rounded-xl border transition-colors cursor-pointer touch-press ${
                       havellsFan.underlight.enabled
                         ? 'bg-amber-500/20 border-amber-400 text-amber-200'
                         : 'bg-slate-800 border-slate-700 text-slate-400'
@@ -446,7 +446,7 @@ export const SmartHomeHub: React.FC<Props> = ({
                             underlight: { ...havellsFan.underlight, temp }
                           });
                         }}
-                        className={`min-h-[38px] rounded-lg text-xs font-mono capitalize border transition-all cursor-pointer ${
+                        className={`min-h-[44px] rounded-xl text-xs font-mono capitalize border transition-all cursor-pointer touch-press ${
                           havellsFan.underlight.temp === temp
                             ? 'bg-amber-950/40 border-amber-400 text-amber-200'
                             : 'bg-slate-900 border-slate-800 text-slate-400'
@@ -637,7 +637,7 @@ export const SmartHomeHub: React.FC<Props> = ({
                           playHudSound('toggle', soundEnabled);
                           onToggleSmartThingsDevice(device.id);
                         }}
-                        className={`min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                        className={`min-h-[46px] min-w-[46px] px-3.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer touch-press ${
                           device.power
                             ? 'bg-purple-500 text-slate-950 shadow-[0_0_12px_rgba(168,85,247,0.5)]'
                             : 'bg-slate-900 border border-slate-700 text-slate-400 hover:border-slate-600'
